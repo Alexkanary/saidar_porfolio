@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import styles from "./backgroundParticles.module.scss";
 
-const PARTICLE_COUNT = 200;
+const PARTICLE_COUNT = 280;
 const MAX_PIXEL_RATIO = 1.75;
 
 const randomBetween = (min, max) => Math.random() * (max - min) + min;
