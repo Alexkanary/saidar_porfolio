@@ -8,39 +8,59 @@ import SliderImages from "@/components/sliderImages/SliderImages";
 import Contact from "@/components/contact/Contact";
 import Preloader from "@/components/preloader/Preloader";
 import { AnimatePresence } from "framer-motion";
+import AudioGate from "@/components/audio/AudioGate";
 ;
 
 export default function Home() {
-  const [isLoading, setIsLoading] = useState(true);
+  const [hasEntered, setHasEntered] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  useEffect( () => {
-    (
-      async () => {
-          const LocomotiveScroll = (await import('locomotive-scroll')).default
-          const locomotiveScroll = new LocomotiveScroll();
+  useEffect(() => {
+    if (!hasEntered) return;
 
-          setTimeout( () => {
-            setIsLoading(false);
-            document.body.style.cursor = 'default'
-            window.scrollTo(0,0);
-          }, 3000)
+    let locomotiveScroll;
+    let isCancelled = false;
+
+    import("locomotive-scroll").then(({ default: LocomotiveScroll }) => {
+      if (!isCancelled) {
+        locomotiveScroll = new LocomotiveScroll();
       }
-    )()
-  }, [])
+    });
+
+    const loadingTimer = window.setTimeout(() => {
+      setIsLoading(false);
+      document.body.style.cursor = "default";
+      window.scrollTo(0, 0);
+    }, 3000);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(loadingTimer);
+      locomotiveScroll?.destroy();
+    };
+  }, [hasEntered]);
 
   return (
     <>
       <main className={styles.main}>
-        <AnimatePresence mode="wait">
-        {
-          isLoading && <Preloader/>
-        }
-        </AnimatePresence>
-        <Hero />
-        <Decs/>
-        <Project />
-        <SliderImages/>
-        <Contact/>
+        <AudioGate
+          onContinue={() => {
+            setIsLoading(true);
+            setHasEntered(true);
+          }}
+        />
+        {hasEntered && (
+          <>
+            <AnimatePresence mode="wait">
+              {isLoading && <Preloader />}
+            </AnimatePresence>
+            <Hero />
+            <Decs />
+            <Project />
+            <SliderImages />
+            <Contact />
+          </>
+        )}
       </main>
     </>
   );
