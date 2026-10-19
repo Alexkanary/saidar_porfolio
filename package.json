@@ -15,7 +15,8 @@
     "next": "15.0.2",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "sass": "^1.80.5"
+    "sass": "^1.80.5",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "postcss": "^8",

@@ -1,0 +1,228 @@
+.welcome {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  padding: 28px;
+  color: var(--welcome-text);
+  background: radial-gradient(
+    ellipse at 50% 43%,
+    var(--welcome-center) 0%,
+    var(--welcome-background) 55%,
+    var(--welcome-edge) 100%
+  );
+
+  &::after {
+    position: absolute;
+    z-index: 5;
+    inset: 0;
+    background: #000;
+    content: "";
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.exiting::after {
+  animation: fade-to-black 700ms ease-in 400ms forwards;
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(100%, 900px);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.emblemEntrance {
+  display: grid;
+  width: clamp(300px, 42vw, 440px);
+  aspect-ratio: 1;
+  margin: -45px 0 -25px;
+  place-items: center;
+}
+
+.emblemStage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  isolation: isolate;
+
+  &::before {
+    position: absolute;
+    z-index: -1;
+    inset: 13%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(47, 111, 181, 0.06), transparent 68%);
+    content: "";
+    pointer-events: none;
+  }
+}
+
+.emblemCanvas,
+.fallbackEmblem {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fallbackEmblem {
+  overflow: visible;
+  filter: drop-shadow(0 0 20px rgba(47, 111, 181, 0.16));
+
+  circle,
+  path {
+    fill: none;
+    stroke: rgba(213, 222, 239, 0.46);
+    stroke-width: 0.008;
+  }
+
+  circle:first-child {
+    stroke-opacity: 0.48;
+  }
+
+  circle:nth-child(2) {
+    stroke-opacity: 0.62;
+  }
+
+  circle:nth-child(3) {
+    stroke-opacity: 0.78;
+  }
+}
+
+.eyebrow {
+  margin: 0 0 24px;
+  color: var(--welcome-muted);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.content h1 {
+  margin: 0;
+  color: var(--welcome-text);
+  font-size: clamp(36px, 5vw, 56px);
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+}
+
+.description {
+  margin: 18px 0 42px;
+  color: var(--welcome-muted);
+  font-size: 18px;
+  letter-spacing: 0.015em;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+.primaryAction,
+.secondaryAction {
+  min-height: 54px;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+
+  &:focus-visible {
+    outline: 2px solid #9fd0ff;
+    outline-offset: 5px;
+  }
+}
+
+.primaryAction {
+  padding: 0 30px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+
+  &:hover {
+    border-color: var(--welcome-pale-blue);
+    background: color-mix(in srgb, var(--welcome-blue) 8%, transparent);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--welcome-blue) 14%, transparent);
+  }
+}
+
+.secondaryAction {
+  min-height: auto;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(154, 163, 181, 0.48);
+  background: transparent;
+  color: var(--welcome-muted);
+  font-size: 15px;
+  transition: color 180ms ease, border-color 180ms ease;
+
+  &:hover {
+    border-color: #f2f4f8;
+    color: var(--welcome-text);
+  }
+}
+
+@keyframes fade-to-black {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .welcome {
+    padding: 22px;
+  }
+
+  .emblemEntrance {
+    width: min(300px, 78vw);
+    margin: -30px 0 -12px;
+  }
+
+  .eyebrow {
+    margin-bottom: 20px;
+    font-size: 11px;
+  }
+
+  .content h1 {
+    font-size: 36px;
+  }
+
+  .description {
+    margin: 14px 0 30px;
+    font-size: 16px;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .primaryAction {
+    width: min(100%, 320px);
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryAction,
+  .secondaryAction {
+    transition: none;
+  }
+
+  .exiting::after {
+    animation-duration: 1ms;
+    animation-delay: 0ms;
+  }
+}

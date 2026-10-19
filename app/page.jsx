@@ -8,8 +8,7 @@ import SliderImages from "@/components/sliderImages/SliderImages";
 import Contact from "@/components/contact/Contact";
 import Preloader from "@/components/preloader/Preloader";
 import { AnimatePresence } from "framer-motion";
-import AudioGate from "@/components/audio/AudioGate";
-;
+import Welcome from "@/components/welcome/Welcome";
 
 export default function Home() {
   const [hasEntered, setHasEntered] = useState(false);
@@ -43,12 +42,14 @@ export default function Home() {
   return (
     <>
       <main className={styles.main}>
-        <AudioGate
-          onContinue={() => {
-            setIsLoading(true);
-            setHasEntered(true);
-          }}
-        />
+        {!hasEntered && (
+          <Welcome
+            onContinue={() => {
+              setIsLoading(true);
+              setHasEntered(true);
+            }}
+          />
+        )}
         {hasEntered && (
           <>
             <AnimatePresence mode="wait">
