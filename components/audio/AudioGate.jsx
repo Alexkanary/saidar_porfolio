@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import CursorSmoke from "./CursorSmoke";
 import styles from "./audioGate.module.scss";
 
 const AudioGate = ({ onContinue }) => {
@@ -49,6 +50,7 @@ const AudioGate = ({ onContinue }) => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.5 }}
           >
+            <CursorSmoke />
             <div className={styles.content}>
               <div className={styles.emblem} aria-hidden="true">
                 <span />
