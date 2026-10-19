@@ -19,6 +19,8 @@ const Welcome = ({ onContinue }) => {
   const [playbackError, setPlaybackError] = useState("");
   const exitTimer = useRef(null);
   const isStarting = useRef(false);
+  const emblemRef = useRef(null);
+  const textBlockRef = useRef(null);
 
   useEffect(() => () => window.clearTimeout(exitTimer.current), []);
 
@@ -64,39 +66,45 @@ const Welcome = ({ onContinue }) => {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.65, ease: "easeOut" }}
     >
+      <EmblemScene
+        flaring={isFlaring}
+        anchorRef={emblemRef}
+        textBlockRef={textBlockRef}
+      />
       <div className={styles.content}>
         <motion.div
+          ref={emblemRef}
           className={styles.emblemEntrance}
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <EmblemScene flaring={isFlaring} />
-        </motion.div>
+        />
 
-        <motion.p className={styles.eyebrow} {...staggeredEntrance(1.2)}>
-          {welcomeConfig.copy.label}
-        </motion.p>
-        <motion.h1 id="welcome-heading" {...staggeredEntrance(1.32)}>
-          {welcomeConfig.copy.heading}
-        </motion.h1>
-        <motion.p className={styles.description} {...staggeredEntrance(1.44)}>
-          {welcomeConfig.copy.description}
-        </motion.p>
+        <div ref={textBlockRef} className={styles.textBlock}>
+          <motion.p className={styles.eyebrow} {...staggeredEntrance(1.2)}>
+            {welcomeConfig.copy.label}
+          </motion.p>
+          <motion.h1 id="welcome-heading" {...staggeredEntrance(1.32)}>
+            {welcomeConfig.copy.heading}
+          </motion.h1>
+          <motion.p className={styles.description} {...staggeredEntrance(1.44)}>
+            {welcomeConfig.copy.description}
+          </motion.p>
 
-        <motion.div className={styles.actions} {...staggeredEntrance(1.56)}>
-          <button type="button" className={styles.primaryAction} onClick={() => handleContinue(true)}>
-            {welcomeConfig.copy.primaryAction}
-          </button>
-          <button type="button" className={styles.secondaryAction} onClick={() => handleContinue(false)}>
-            {welcomeConfig.copy.secondaryAction}
-          </button>
-        </motion.div>
-        {playbackError && (
-          <p className={styles.playbackError} role="status">
-            {playbackError}
-          </p>
-        )}
+          <motion.div className={styles.actions} {...staggeredEntrance(1.56)}>
+            <button type="button" className={styles.primaryAction} onClick={() => handleContinue(true)}>
+              {welcomeConfig.copy.primaryAction}
+            </button>
+            <button type="button" className={styles.secondaryAction} onClick={() => handleContinue(false)}>
+              {welcomeConfig.copy.secondaryAction}
+            </button>
+          </motion.div>
+          {playbackError && (
+            <p className={styles.playbackError} role="status">
+              {playbackError}
+            </p>
+          )}
+        </div>
       </div>
     </motion.div>
   );

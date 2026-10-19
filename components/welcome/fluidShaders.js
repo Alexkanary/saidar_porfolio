@@ -46,7 +46,7 @@ export const fluidSimulationShader = `
     float trail = texture2D(uPrevious, clamp(uv - drift, 0.002, 0.998)).r
       * uDissipation;
 
-    vec2 delta = (uv - uLight) * vec2(uResolution.x / uResolution.y, 1.0);
+    vec2 delta = (uv - uLight) * uResolution;
     float speed = clamp(length(uLightVelocity) * 18.0, 0.0, 1.0);
     // Larger splats at high speed create the pale flare; slow movement stays tight.
     float radius = uTrailRadius * mix(0.72, 1.8, speed);
@@ -63,6 +63,11 @@ export const fluidDisplayShader = `
   varying vec2 vUv;
   uniform sampler2D uTrail;
   uniform vec2 uTexel;
+  uniform vec2 uResolution;
+  uniform vec2 uLogoUv;
+  uniform vec2 uTextBounds;
+  uniform float uLogoRadius;
+  uniform float uMaxOutsideLogo;
   uniform float uTime;
   uniform float uFlare;
   uniform float uStaticGlow;
@@ -99,8 +104,6 @@ export const fluidDisplayShader = `
   }
 
   void main() {
-    vec2 centered = (vUv - 0.5) * 2.0;
-    float mask = 1.0 - smoothstep(uMaskSize * 0.68, uMaskSize, length(vUv - 0.5));
     vec2 warp = (vUv - 0.5) * 0.012;
     float trail = texture2D(uTrail, vUv + warp).r;
 
@@ -115,9 +118,30 @@ export const fluidDisplayShader = `
     float organicNoise = fbm(vUv * 3.0 + uTime * 0.05);
     float wisps = smoothstep(0.22, 0.6, trail + organicNoise * uEdgeRaggedness);
     float fill = trail * 0.22;
-    float staticGlow = exp(-dot(centered, centered) * 12.0) * 0.045 * uStaticGlow;
+    vec2 logoDelta = (vUv - uLogoUv) * uResolution;
+    float logoDistance = length(logoDelta);
+    float logoInfluence = 1.0 - smoothstep(
+      uLogoRadius,
+      uLogoRadius * uMaskSize,
+      logoDistance
+    );
+    float textBlock = smoothstep(
+      uTextBounds.x,
+      uTextBounds.x + 0.055,
+      vUv.y
+    ) * (1.0 - smoothstep(
+      uTextBounds.y - 0.055,
+      uTextBounds.y,
+      vUv.y
+    ));
+    float staticGlow = exp(
+      -dot(logoDelta, logoDelta) / (uLogoRadius * uLogoRadius * 4.0)
+    ) * 0.045 * uStaticGlow;
     float flare = uFlare;
-    float strength = (wisps * 1.18 + bloom * 0.42 + fill + staticGlow + flare * 0.6) * mask;
+    float spatialIntensity = mix(uMaxOutsideLogo, 1.0, logoInfluence);
+    spatialIntensity *= mix(1.0, 0.12, textBlock);
+    float strength = (wisps * 1.18 + bloom * 0.42 + fill + staticGlow + flare * 0.6)
+      * spatialIntensity;
     strength = clamp(strength, 0.0, 1.0);
 
     vec3 color = mix(uDeepBlue, uBlue, smoothstep(0.12, 0.58, strength));
@@ -149,6 +173,9 @@ export const emblemFragmentShader = `
   varying vec3 vNormal;
   varying vec3 vViewPosition;
   uniform sampler2D uTrail;
+  uniform vec2 uResolution;
+  uniform vec2 uLogoUv;
+  uniform float uLogoRadius;
   uniform float uOpacity;
   uniform float uFlare;
   uniform float uStaticGlow;
@@ -166,14 +193,15 @@ export const emblemFragmentShader = `
 
   void main() {
     vec2 uv = clamp(vScreenUv, 0.0, 1.0);
-    vec2 centered = (uv - 0.5) * 2.0;
-    float mask = 1.0 - smoothstep(uMaskSize * 0.68, uMaskSize, length(uv - 0.5));
     float trail = texture2D(uTrail, uv).r;
     float edgeNoise = hash(floor(uv * 92.0 + uTime * 0.1)) * uEdgeRaggedness;
     float lit = smoothstep(0.12, 0.48, trail + edgeNoise);
     float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.0);
-    float staticLight = exp(-dot(centered, centered) * 12.0) * uStaticGlow;
-    float glow = clamp((lit + staticLight * 0.18 + uFlare) * mask, 0.0, 1.0);
+    vec2 logoDelta = (uv - uLogoUv) * uResolution;
+    float staticLight = exp(
+      -dot(logoDelta, logoDelta) / (uLogoRadius * uLogoRadius * 4.0)
+    ) * uStaticGlow;
+    float glow = clamp(lit + staticLight * 0.18 + uFlare, 0.0, 1.0);
 
     vec3 color = mix(uSilver, uDeepBlue, smoothstep(0.03, 0.18, glow));
     color = mix(color, uBlue, smoothstep(0.2, 0.62, glow));

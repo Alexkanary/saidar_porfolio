@@ -8,12 +8,17 @@ export const welcomeConfig = {
     trailDissipation: 0.968,
     // FBM contribution to the display threshold for torn, organic glow edges.
     edgeRaggedness: 0.18,
-    // About 1.8x the emblem radius in normalized canvas coordinates.
-    maskSize: 0.42,
+    // Glow remains detailed to this multiple of the logo radius.
+    maskSize: 1.8,
+    // Maximum trail strength away from the logo, including the text block.
+    maxGlowOutsideLogo: 0.45,
     // Autonomous light brightness after the cursor has been idle.
     idleIntensity: 0.3,
     // Base gaussian splat radius in the low-resolution simulation buffer.
     trailRadius: 0.075,
+    // Full Y-axis rotation periods (seconds), ordered outer to inner ring.
+    ringRotationPeriods: [14, 11, 8],
+    diamondRotationPeriod: 12,
   },
   audio: {
     src: "/audio/portfolio-music.mp3",
