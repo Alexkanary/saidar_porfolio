@@ -53,6 +53,55 @@
   place-items: center;
 }
 
+.sparkCursor {
+  position: fixed;
+  z-index: 6;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+  transform: translate(-27px, -4px);
+}
+
+.sparkTrail {
+  fill: none;
+  stroke: rgba(106, 174, 255, 0.24);
+  stroke-linecap: round;
+  stroke-width: 8px;
+  filter: blur(4px);
+}
+
+.sparkShaft {
+  fill: none;
+  stroke: #c0d8f4;
+  stroke-linecap: round;
+  stroke-width: 2px;
+}
+
+.sparkFlame {
+  fill: #72baff;
+  filter: drop-shadow(0 0 3px rgba(81, 166, 255, 0.95))
+    drop-shadow(0 0 8px rgba(81, 166, 255, 0.7));
+}
+
+.sparkCore {
+  fill: #f2f8ff;
+  filter: drop-shadow(0 0 3px rgba(207, 235, 255, 0.9));
+}
+
+.sparkGlint {
+  fill: none;
+  stroke: #c5e5ff;
+  stroke-linecap: round;
+  stroke-width: 1.4px;
+  filter: drop-shadow(0 0 3px rgba(91, 177, 255, 0.85));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .emblemEntrance:hover {
+    cursor: none;
+  }
+}
+
 .emblemStage {
   position: fixed;
   z-index: 0;
