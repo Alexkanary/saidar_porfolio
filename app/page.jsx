@@ -2,7 +2,7 @@
 import Hero from "@/components/hero/Hero";
 import Project from "@/components/project";
 import styles from "./page.module.scss";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Decs from "@/components/descripction/Decs";
 import SliderImages from "@/components/sliderImages/SliderImages";
 import Contact from "@/components/contact/Contact";
@@ -11,6 +11,7 @@ import { AnimatePresence } from "framer-motion";
 import Welcome from "@/components/welcome/Welcome";
 
 export default function Home() {
+  const audioRef = useRef(null);
   const [hasEntered, setHasEntered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -42,8 +43,10 @@ export default function Home() {
   return (
     <>
       <main className={styles.main}>
+        <audio ref={audioRef} src="/audio/portfolio-music.mp3" loop preload="none" />
         {!hasEntered && (
           <Welcome
+            audioRef={audioRef}
             onContinue={() => {
               setIsLoading(true);
               setHasEntered(true);

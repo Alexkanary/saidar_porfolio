@@ -316,7 +316,13 @@ const EmblemScene = ({ flaring }) => {
       const handleFlare = () => {
         flareStartedAt = performance.now();
         if (!reducedMotion.matches) startLoop();
-        else renderStatic();
+        else {
+          displayMaterial.uniforms.uFlare.value = 1;
+          emblemMaterials.forEach((material) => {
+            material.uniforms.uFlare.value = 1;
+          });
+          renderStatic();
+        }
       };
 
       host.addEventListener("pointermove", handlePointerMove, { passive: true });

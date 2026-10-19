@@ -12,15 +12,35 @@ const staggeredEntrance = (delay) => ({
   transition: { duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] },
 });
 
-const Welcome = ({ onContinue }) => {
+const Welcome = ({ audioRef, onContinue }) => {
   const [isExiting, setIsExiting] = useState(false);
   const [isFlaring, setIsFlaring] = useState(false);
+  const [playbackError, setPlaybackError] = useState("");
   const exitTimer = useRef(null);
 
   useEffect(() => () => window.clearTimeout(exitTimer.current), []);
 
-  const handleContinue = () => {
+  const handleContinue = async (withMusic) => {
     if (isExiting) return;
+
+    if (withMusic) {
+      const audio = audioRef.current;
+      if (!audio) {
+        setPlaybackError("Music could not be loaded. You can continue without sound.");
+        return;
+      }
+
+      audio.volume = 0.35;
+      try {
+        await audio.play();
+      } catch (error) {
+        console.error("Unable to start portfolio music:", error);
+        setPlaybackError("Music could not be started. Please try again or continue without sound.");
+        return;
+      }
+    }
+
+    setPlaybackError("");
     setIsFlaring(true);
     setIsExiting(true);
     exitTimer.current = window.setTimeout(onContinue, 1100);
@@ -66,13 +86,18 @@ const Welcome = ({ onContinue }) => {
         </motion.p>
 
         <motion.div className={styles.actions} {...staggeredEntrance(1.56)}>
-          <button type="button" className={styles.primaryAction} onClick={handleContinue}>
+          <button type="button" className={styles.primaryAction} onClick={() => handleContinue(true)}>
             {welcomeConfig.copy.primaryAction}
           </button>
-          <button type="button" className={styles.secondaryAction} onClick={handleContinue}>
+          <button type="button" className={styles.secondaryAction} onClick={() => handleContinue(false)}>
             {welcomeConfig.copy.secondaryAction}
           </button>
         </motion.div>
+        {playbackError && (
+          <p className={styles.playbackError} role="status">
+            {playbackError}
+          </p>
+        )}
       </div>
     </motion.div>
   );
