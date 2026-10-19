@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { disableMusic, enableMusic } from "@/components/audio/audioManager";
 import EmblemScene from "./EmblemScene";
 import styles from "./welcome.module.scss";
 import { welcomeConfig } from "./welcomeConfig";
@@ -12,38 +13,36 @@ const staggeredEntrance = (delay) => ({
   transition: { duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] },
 });
 
-const Welcome = ({ audioRef, onContinue }) => {
+const Welcome = ({ onContinue }) => {
   const [isExiting, setIsExiting] = useState(false);
   const [isFlaring, setIsFlaring] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const exitTimer = useRef(null);
+  const isStarting = useRef(false);
 
   useEffect(() => () => window.clearTimeout(exitTimer.current), []);
 
   const handleContinue = async (withMusic) => {
-    if (isExiting) return;
+    if (isExiting || isStarting.current) return;
+    isStarting.current = true;
 
     if (withMusic) {
-      const audio = audioRef.current;
-      if (!audio) {
-        setPlaybackError("Music could not be loaded. You can continue without sound.");
-        return;
-      }
-
-      audio.volume = 0.35;
       try {
-        await audio.play();
+        await enableMusic();
       } catch (error) {
         console.error("Unable to start portfolio music:", error);
         setPlaybackError("Music could not be started. Please try again or continue without sound.");
+        isStarting.current = false;
         return;
       }
+    } else {
+      disableMusic();
     }
 
     setPlaybackError("");
     setIsFlaring(true);
     setIsExiting(true);
-    exitTimer.current = window.setTimeout(onContinue, 1100);
+    exitTimer.current = window.setTimeout(() => onContinue(withMusic), 1100);
   };
 
   return (

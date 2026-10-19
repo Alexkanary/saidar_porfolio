@@ -1,4 +1,26 @@
 export const welcomeConfig = {
+  effect: {
+    // Simulation resolution: 256px keeps fluid motion smooth without a full-screen buffer.
+    bufferSize: 256,
+    // Cursor response spring strength; lower values give the light more inertia.
+    cursorLag: 0.08,
+    // Amount of trail retained per frame; 0.968 produces a slow smoky fade.
+    trailDissipation: 0.968,
+    // FBM contribution to the display threshold for torn, organic glow edges.
+    edgeRaggedness: 0.18,
+    // About 1.8x the emblem radius in normalized canvas coordinates.
+    maskSize: 0.42,
+    // Autonomous light brightness after the cursor has been idle.
+    idleIntensity: 0.3,
+    // Base gaussian splat radius in the low-resolution simulation buffer.
+    trailRadius: 0.075,
+  },
+  audio: {
+    src: "/audio/portfolio-music.mp3",
+    targetVolume: 0.5,
+    fadeInDuration: 2000,
+    preferenceKey: "sai-dar-portfolio-sound-enabled",
+  },
   copy: {
     label: "SAI DAR · PORTFOLIO",
     heading: "Continue with music?",
@@ -14,7 +36,7 @@ export const welcomeConfig = {
     muted: "#9aa3b5",
     deepBlue: "#1b3a6b",
     blue: "#2f6fb5",
-    paleBlue: "#9fd0ff",
+    paleBlue: "#a8d4ff",
     silver: "#d5deef",
   },
 };

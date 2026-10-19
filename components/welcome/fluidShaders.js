@@ -12,12 +12,13 @@ export const fluidSimulationShader = `
 
   varying vec2 vUv;
   uniform sampler2D uPrevious;
-  uniform vec2 uMouse;
-  uniform vec2 uVelocity;
+  uniform vec2 uLight;
+  uniform vec2 uLightVelocity;
   uniform vec2 uResolution;
   uniform float uTime;
   uniform float uDissipation;
   uniform float uSplatStrength;
+  uniform float uTrailRadius;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -36,19 +37,19 @@ export const fluidSimulationShader = `
 
   void main() {
     vec2 uv = vUv;
-    float field = noise(uv * 4.0 + uTime * 0.025);
-    float fieldX = noise(uv * 4.0 + vec2(0.008, 0.0) + uTime * 0.025)
-      - noise(uv * 4.0 - vec2(0.008, 0.0) + uTime * 0.025);
-    float fieldY = noise(uv * 4.0 + vec2(0.0, 0.008) + uTime * 0.025)
-      - noise(uv * 4.0 - vec2(0.0, 0.008) + uTime * 0.025);
+    float fieldX = noise(uv * 3.0 + vec2(0.008, 0.0) + uTime * 0.025)
+      - noise(uv * 3.0 - vec2(0.008, 0.0) + uTime * 0.025);
+    float fieldY = noise(uv * 3.0 + vec2(0.0, 0.008) + uTime * 0.025)
+      - noise(uv * 3.0 - vec2(0.0, 0.008) + uTime * 0.025);
     vec2 curl = normalize(vec2(fieldY, -fieldX) + vec2(0.0001));
-    vec2 drift = curl * 0.0035 + uVelocity * 0.22;
+    vec2 drift = curl * 0.003 + uLightVelocity * 0.18;
     float trail = texture2D(uPrevious, clamp(uv - drift, 0.002, 0.998)).r
       * uDissipation;
 
-    vec2 delta = (uv - uMouse) * vec2(uResolution.x / uResolution.y, 1.0);
-    float speed = clamp(length(uVelocity) * 18.0, 0.0, 1.0);
-    float radius = mix(0.07, 0.14, speed);
+    vec2 delta = (uv - uLight) * vec2(uResolution.x / uResolution.y, 1.0);
+    float speed = clamp(length(uLightVelocity) * 18.0, 0.0, 1.0);
+    // Larger splats at high speed create the pale flare; slow movement stays tight.
+    float radius = uTrailRadius * mix(0.72, 1.8, speed);
     float splat = exp(-dot(delta, delta) / (radius * radius));
     trail = max(trail, splat * uSplatStrength);
 
@@ -65,6 +66,8 @@ export const fluidDisplayShader = `
   uniform float uTime;
   uniform float uFlare;
   uniform float uStaticGlow;
+  uniform float uEdgeRaggedness;
+  uniform float uMaskSize;
   uniform vec3 uDeepBlue;
   uniform vec3 uBlue;
   uniform vec3 uPaleBlue;
@@ -87,7 +90,7 @@ export const fluidDisplayShader = `
   float fbm(vec2 p) {
     float value = 0.0;
     float amplitude = 0.5;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       value += noise(p) * amplitude;
       p *= 2.03;
       amplitude *= 0.5;
@@ -97,9 +100,10 @@ export const fluidDisplayShader = `
 
   void main() {
     vec2 centered = (vUv - 0.5) * 2.0;
-    float falloff = 1.0 - smoothstep(0.28, 1.0, length(centered));
+    float mask = 1.0 - smoothstep(uMaskSize * 0.68, uMaskSize, length(vUv - 0.5));
     vec2 warp = (vUv - 0.5) * 0.012;
     float trail = texture2D(uTrail, vUv + warp).r;
+
     float bloom = 0.0;
     bloom += texture2D(uTrail, vUv + vec2(uTexel.x * 2.0, 0.0)).r;
     bloom += texture2D(uTrail, vUv - vec2(uTexel.x * 2.0, 0.0)).r;
@@ -107,17 +111,19 @@ export const fluidDisplayShader = `
     bloom += texture2D(uTrail, vUv - vec2(0.0, uTexel.y * 2.0)).r;
     bloom *= 0.25;
 
-    float organicNoise = fbm(vUv * 18.0 + uTime * 0.018);
-    float wisps = smoothstep(0.25, 0.6, trail + organicNoise * 0.15);
-    float fluidGlow = (wisps + bloom * 0.24) * falloff;
-    float staticGlow = exp(-dot(centered, centered) * 5.0) * 0.09 * uStaticGlow;
-    float flare = uFlare * falloff;
-    float strength = clamp(fluidGlow + staticGlow + flare * 0.4, 0.0, 1.0);
+    // Frequency is deliberately low so the threshold breaks the glow into soft wisps.
+    float organicNoise = fbm(vUv * 3.0 + uTime * 0.05);
+    float wisps = smoothstep(0.22, 0.6, trail + organicNoise * uEdgeRaggedness);
+    float fill = trail * 0.22;
+    float staticGlow = exp(-dot(centered, centered) * 12.0) * 0.045 * uStaticGlow;
+    float flare = uFlare;
+    float strength = (wisps * 1.18 + bloom * 0.42 + fill + staticGlow + flare * 0.6) * mask;
+    strength = clamp(strength, 0.0, 1.0);
 
-    vec3 color = mix(uDeepBlue, uBlue, smoothstep(0.15, 0.6, strength));
-    color = mix(color, uPaleBlue, smoothstep(0.62, 1.0, strength + flare * 0.35));
+    vec3 color = mix(uDeepBlue, uBlue, smoothstep(0.12, 0.58, strength));
+    color = mix(color, uPaleBlue, smoothstep(0.58, 1.0, strength));
 
-    gl_FragColor = vec4(color * strength * 0.8, strength * 0.48);
+    gl_FragColor = vec4(color * strength * 1.2, strength * 0.82);
   }
 `;
 
@@ -147,7 +153,10 @@ export const emblemFragmentShader = `
   uniform float uFlare;
   uniform float uStaticGlow;
   uniform float uTime;
+  uniform float uEdgeRaggedness;
+  uniform float uMaskSize;
   uniform vec3 uSilver;
+  uniform vec3 uDeepBlue;
   uniform vec3 uBlue;
   uniform vec3 uPaleBlue;
 
@@ -157,18 +166,20 @@ export const emblemFragmentShader = `
 
   void main() {
     vec2 uv = clamp(vScreenUv, 0.0, 1.0);
+    vec2 centered = (uv - 0.5) * 2.0;
+    float mask = 1.0 - smoothstep(uMaskSize * 0.68, uMaskSize, length(uv - 0.5));
     float trail = texture2D(uTrail, uv).r;
-    float edgeNoise = hash(floor(uv * 92.0 + uTime * 0.1));
-    float lit = smoothstep(0.12, 0.48, trail + edgeNoise * 0.12);
+    float edgeNoise = hash(floor(uv * 92.0 + uTime * 0.1)) * uEdgeRaggedness;
+    float lit = smoothstep(0.12, 0.48, trail + edgeNoise);
     float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.0);
-    float staticLight = exp(-dot((uv - 0.5) * 2.0, (uv - 0.5) * 2.0) * 7.0)
-      * uStaticGlow;
-    float glow = clamp(lit + uFlare * 0.9 + staticLight * 0.24, 0.0, 1.0);
+    float staticLight = exp(-dot(centered, centered) * 12.0) * uStaticGlow;
+    float glow = clamp((lit + staticLight * 0.18 + uFlare) * mask, 0.0, 1.0);
 
-    vec3 color = mix(uSilver, uBlue, smoothstep(0.06, 0.5, glow));
-    color = mix(color, uPaleBlue, smoothstep(0.7, 1.0, glow));
-    float opacity = uOpacity + fresnel * 0.12 + glow * 0.78;
+    vec3 color = mix(uSilver, uDeepBlue, smoothstep(0.03, 0.18, glow));
+    color = mix(color, uBlue, smoothstep(0.2, 0.62, glow));
+    color = mix(color, uPaleBlue, smoothstep(0.62, 0.96, glow));
+    float opacity = min(uOpacity * (1.0 - lit * 0.35) + fresnel * 0.06 + glow * 1.05, 1.0);
 
-    gl_FragColor = vec4(color * (0.82 + glow * 1.2), opacity);
+    gl_FragColor = vec4(color * (0.72 + glow * 2.0), opacity);
   }
 `;

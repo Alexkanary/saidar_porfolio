@@ -2,18 +2,24 @@
 import Hero from "@/components/hero/Hero";
 import Project from "@/components/project";
 import styles from "./page.module.scss";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Decs from "@/components/descripction/Decs";
 import SliderImages from "@/components/sliderImages/SliderImages";
 import Contact from "@/components/contact/Contact";
 import Preloader from "@/components/preloader/Preloader";
 import { AnimatePresence } from "framer-motion";
 import Welcome from "@/components/welcome/Welcome";
+import SoundToggle from "@/components/audio/SoundToggle";
+import { getStoredMusicPreference } from "@/components/audio/audioManager";
 
 export default function Home() {
-  const audioRef = useRef(null);
   const [hasEntered, setHasEntered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMusicEnabled, setIsMusicEnabled] = useState(false);
+
+  useEffect(() => {
+    setIsMusicEnabled(getStoredMusicPreference());
+  }, []);
 
   useEffect(() => {
     if (!hasEntered) return;
@@ -43,11 +49,10 @@ export default function Home() {
   return (
     <>
       <main className={styles.main}>
-        <audio ref={audioRef} src="/audio/portfolio-music.mp3" loop preload="none" />
         {!hasEntered && (
           <Welcome
-            audioRef={audioRef}
-            onContinue={() => {
+            onContinue={(withMusic) => {
+              setIsMusicEnabled(withMusic);
               setIsLoading(true);
               setHasEntered(true);
             }}
@@ -64,6 +69,9 @@ export default function Home() {
             <SliderImages />
             <Contact />
           </>
+        )}
+        {hasEntered && !isLoading && (
+          <SoundToggle enabled={isMusicEnabled} onChange={setIsMusicEnabled} />
         )}
       </main>
     </>

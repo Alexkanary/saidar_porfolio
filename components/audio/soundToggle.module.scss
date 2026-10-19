@@ -1,0 +1,61 @@
+.container {
+  position: fixed;
+  z-index: 80;
+  top: 24px;
+  right: 24px;
+}
+
+.toggle {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+  border: 1px solid rgba(213, 222, 239, 0.32);
+  border-radius: 22px;
+  background: rgba(13, 17, 28, 0.72);
+  color: #d5deef;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+
+  svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  &:hover {
+    border-color: rgba(168, 212, 255, 0.8);
+    background: rgba(21, 27, 43, 0.9);
+    color: #a8d4ff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #a8d4ff;
+    outline-offset: 4px;
+  }
+}
+
+.error {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 48px));
+  color: #ffc2b8;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .container {
+    top: 14px;
+    right: 14px;
+  }
+}

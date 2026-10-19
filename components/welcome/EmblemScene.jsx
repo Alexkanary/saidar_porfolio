@@ -12,12 +12,13 @@ import {
 } from "./fluidShaders";
 import { welcomeConfig } from "./welcomeConfig";
 
-const BUFFER_SIZE = 256;
+const { effect, colors } = welcomeConfig;
+const BUFFER_SIZE = effect.bufferSize;
 const WORLD_SIZE = 4.4;
 const RINGS = [
-  { radius: 1.0, depth: 0.08, opacity: 0.3, parallax: 0.7 },
-  { radius: 0.8, depth: 0, opacity: 0.46, parallax: 1 },
-  { radius: 0.58, depth: -0.08, opacity: 0.62, parallax: 1.3 },
+  { radius: 1.0, depth: 0.08, opacity: 0.26, parallax: 0.7 },
+  { radius: 0.8, depth: 0, opacity: 0.32, parallax: 1 },
+  { radius: 0.58, depth: -0.08, opacity: 0.38, parallax: 1.3 },
 ];
 
 const EmblemFallback = () => (
@@ -65,12 +66,11 @@ const EmblemScene = ({ flaring }) => {
       renderer.setSize(rect.width, rect.height, false);
 
       const scene = new THREE.Scene();
-      const colors = welcomeConfig.colors;
-      const glowColors = {
+      const glowColors = () => ({
         uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
         uBlue: { value: new THREE.Color(colors.blue) },
         uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
-      };
+      });
       const camera = new THREE.OrthographicCamera(-WORLD_SIZE / 2, WORLD_SIZE / 2, WORLD_SIZE / 2, -WORLD_SIZE / 2, 0.1, 10);
       camera.position.z = 5;
 
@@ -97,12 +97,13 @@ const EmblemScene = ({ flaring }) => {
         fragmentShader: fluidSimulationShader,
         uniforms: {
           uPrevious: { value: simulationTargetA.texture },
-          uMouse: { value: new THREE.Vector2(0.5, 0.5) },
-          uVelocity: { value: new THREE.Vector2() },
+          uLight: { value: new THREE.Vector2(0.5, 0.5) },
+          uLightVelocity: { value: new THREE.Vector2() },
           uResolution: { value: new THREE.Vector2(BUFFER_SIZE, BUFFER_SIZE) },
           uTime: { value: 0 },
-          uDissipation: { value: 0.97 },
-          uSplatStrength: { value: 0.35 },
+          uDissipation: { value: effect.trailDissipation },
+          uSplatStrength: { value: 0 },
+          uTrailRadius: { value: effect.trailRadius },
         },
         depthTest: false,
         depthWrite: false,
@@ -119,7 +120,9 @@ const EmblemScene = ({ flaring }) => {
           uTime: { value: 0 },
           uFlare: { value: 0 },
           uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
-          ...glowColors,
+          uEdgeRaggedness: { value: effect.edgeRaggedness },
+          uMaskSize: { value: effect.maskSize },
+          ...glowColors(),
         },
         transparent: true,
         depthTest: false,
@@ -147,9 +150,12 @@ const EmblemScene = ({ flaring }) => {
             uFlare: { value: 0 },
             uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
             uTime: { value: 0 },
+            uEdgeRaggedness: { value: effect.edgeRaggedness },
+            uMaskSize: { value: effect.maskSize },
             uSilver: { value: new THREE.Color(colors.silver) },
             uBlue: { value: new THREE.Color(colors.blue) },
             uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
+            uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
           },
           transparent: true,
           depthWrite: false,
@@ -174,9 +180,12 @@ const EmblemScene = ({ flaring }) => {
           uFlare: { value: 0 },
           uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
           uTime: { value: 0 },
+          uEdgeRaggedness: { value: effect.edgeRaggedness },
+          uMaskSize: { value: effect.maskSize },
           uSilver: { value: new THREE.Color(colors.silver) },
           uBlue: { value: new THREE.Color(colors.blue) },
           uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
+          uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
         },
         wireframe: true,
         transparent: true,
@@ -190,17 +199,29 @@ const EmblemScene = ({ flaring }) => {
       const emblemMaterials = materials.slice(2);
 
       const pointer = new THREE.Vector2(0.5, 0.5);
-      const lastPointer = new THREE.Vector2(0.5, 0.5);
-      const pointerVelocity = new THREE.Vector2();
+      const previousPointer = new THREE.Vector2(0.5, 0.5);
+      const cursorVelocity = new THREE.Vector2();
+      const lightPoint = new THREE.Vector2(0.5, 0.5);
+      const previousLightPoint = new THREE.Vector2(0.5, 0.5);
+      const lightVelocity = new THREE.Vector2();
+      const lightDelta = new THREE.Vector2();
+      const lightBounds = {
+        min: new THREE.Vector2(0.04, 0.04),
+        max: new THREE.Vector2(0.96, 0.96),
+      };
       const cursorTilt = new THREE.Vector2();
       const targetTilt = new THREE.Vector2();
-      let lastInputTime = 0;
+      const canHover = window.matchMedia("(pointer: fine)").matches;
+      const sceneStartedAt = performance.now();
+      let lastInputTime = -Infinity;
+      let hasPointerInput = false;
       let flareStartedAt = flaring ? performance.now() : 0;
       let readTarget = simulationTargetA;
       let writeTarget = simulationTargetB;
-      let lastFrameTime = performance.now();
+      let lastFrameTime = sceneStartedAt;
 
       const handlePointerMove = (event) => {
+        if (!canHover || event.pointerType === "touch") return;
         const bounds = host.getBoundingClientRect();
         const x = (event.clientX - bounds.left) / bounds.width;
         const y = 1 - (event.clientY - bounds.top) / bounds.height;
@@ -208,7 +229,8 @@ const EmblemScene = ({ flaring }) => {
 
         pointer.set(x, y);
         lastInputTime = performance.now();
-        targetTilt.set((0.5 - y) * 0.28, (x - 0.5) * 0.28);
+        hasPointerInput = true;
+        targetTilt.set((0.5 - y) * 0.2, (x - 0.5) * 0.2);
       };
 
       const handleResize = () => {
@@ -232,11 +254,16 @@ const EmblemScene = ({ flaring }) => {
         const elapsed = Math.min((now - lastFrameTime) / 1000, 0.05);
         lastFrameTime = now;
         const time = now * 0.001;
-        if (now - lastInputTime > 2000) {
+        const idle = !canHover || (
+          hasPointerInput
+            ? now - lastInputTime > 2500
+            : now - sceneStartedAt > 2500
+        );
+        if (idle) {
           const autonomousTime = time * 0.34;
           pointer.set(
-            0.5 + Math.sin(autonomousTime) * 0.29,
-            0.5 + Math.sin(autonomousTime * 1.37 + 0.7) * 0.25,
+            0.5 + Math.sin(autonomousTime) * 0.2,
+            0.5 + Math.sin(autonomousTime * 1.37 + 0.7) * 0.18,
           );
           targetTilt.set(
             Math.sin(autonomousTime * 0.7) * 0.06,
@@ -244,12 +271,22 @@ const EmblemScene = ({ flaring }) => {
           );
         }
 
-        pointerVelocity.copy(pointer).sub(lastPointer).multiplyScalar(1 / Math.max(elapsed * 60, 1));
-        lastPointer.copy(pointer);
+        const frameScale = Math.min(elapsed * 60, 2);
+        const spring = effect.cursorLag * frameScale;
+        const damping = Math.pow(0.84, frameScale);
+        cursorVelocity.copy(pointer).sub(previousPointer).divideScalar(frameScale);
+        previousPointer.copy(pointer);
+        previousLightPoint.copy(lightPoint);
+        lightDelta.subVectors(pointer, lightPoint);
+        lightVelocity.addScaledVector(lightDelta, spring);
+        lightVelocity.multiplyScalar(damping);
+        lightPoint.addScaledVector(lightVelocity, frameScale);
+        lightPoint.clamp(lightBounds.min, lightBounds.max);
+        lightVelocity.copy(lightPoint).sub(previousLightPoint).divideScalar(frameScale);
         cursorTilt.lerp(targetTilt, 0.06);
         root.position.y = Math.sin(time * 0.6) * 0.025;
-        root.rotation.x = Math.sin(time * 0.42) * 0.08 + cursorTilt.x;
-        root.rotation.y = Math.sin(time * 0.37) * 0.08 + cursorTilt.y;
+        root.rotation.x = Math.sin(time * 0.42) * 0.025 + cursorTilt.x;
+        root.rotation.y = Math.sin(time * 0.37) * 0.025 + cursorTilt.y;
 
         ringGroups.forEach(({ group, parallax }, index) => {
           group.rotation.x = cursorTilt.x * parallax;
@@ -258,11 +295,17 @@ const EmblemScene = ({ flaring }) => {
         });
 
         simulationMaterial.uniforms.uPrevious.value = readTarget.texture;
-        simulationMaterial.uniforms.uMouse.value.copy(pointer);
-        simulationMaterial.uniforms.uVelocity.value.copy(pointerVelocity).multiplyScalar(0.04);
+        simulationMaterial.uniforms.uLight.value.copy(lightPoint);
+        simulationMaterial.uniforms.uLightVelocity.value
+          .copy(lightVelocity)
+          .addScaledVector(cursorVelocity, 0.55);
         simulationMaterial.uniforms.uTime.value = time;
-        simulationMaterial.uniforms.uSplatStrength.value =
-          now - lastInputTime > 2000 ? 0.28 : 0.28 + Math.min(pointerVelocity.length() * 1.2, 0.62);
+        const speed = Math.min(cursorVelocity.length() * 60 + lightVelocity.length() * 24, 1);
+        const stopDuration = hasPointerInput ? now - lastInputTime : Infinity;
+        const motionFade = Math.exp(-Math.max(stopDuration - 100, 0) / 720);
+        simulationMaterial.uniforms.uSplatStrength.value = idle
+          ? effect.idleIntensity
+          : speed * motionFade;
         renderer.setRenderTarget(writeTarget);
         renderer.render(fluidScene, fluidCamera);
         renderer.setRenderTarget(null);
