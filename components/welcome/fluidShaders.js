@@ -81,9 +81,12 @@ export const fluidDisplayShader = `
   uniform vec2 uTexel;
   uniform vec2 uResolution;
   uniform vec2 uLogoUv;
-  uniform vec2 uTextBounds;
+  uniform vec4 uContentBounds;
   uniform float uLogoRadius;
   uniform float uMaxOutsideLogo;
+  uniform float uLogoBrightness;
+  uniform float uContentBrightness;
+  uniform float uSmokeOpacity;
   uniform float uTime;
   uniform float uFlare;
   uniform float uStaticGlow;
@@ -141,28 +144,26 @@ export const fluidDisplayShader = `
       uLogoRadius * uMaskSize,
       logoDistance
     );
-    float textBlock = smoothstep(
-      uTextBounds.x,
-      uTextBounds.x + 0.055,
-      vUv.y
-    ) * (1.0 - smoothstep(
-      uTextBounds.y - 0.055,
-      uTextBounds.y,
-      vUv.y
-    ));
+    vec2 contentCenter = (uContentBounds.xy + uContentBounds.zw) * 0.5;
+    vec2 contentHalfSize = (uContentBounds.zw - uContentBounds.xy) * uResolution * 0.5;
+    vec2 contentPoint = (vUv - contentCenter) * uResolution;
+    vec2 contentBox = abs(contentPoint) - contentHalfSize;
+    float contentDistance = length(max(contentBox, 0.0))
+      + min(max(contentBox.x, contentBox.y), 0.0);
+    float contentFade = smoothstep(8.0, 54.0, contentDistance);
     float staticGlow = exp(
       -dot(logoDelta, logoDelta) / (uLogoRadius * uLogoRadius * 4.0)
     ) * 0.045 * uStaticGlow;
     float flare = uFlare;
-    float spatialIntensity = mix(uMaxOutsideLogo, 1.0, logoInfluence);
-    spatialIntensity *= mix(1.0, 0.12, textBlock);
+    float spatialIntensity = mix(uMaxOutsideLogo, uLogoBrightness, logoInfluence);
+    spatialIntensity *= mix(uContentBrightness, 1.0, contentFade);
     float strength = (wisps * 1.18 + bloom * 0.42 + fill + staticGlow + flare * 0.6)
       * spatialIntensity;
     strength = clamp(strength, 0.0, 1.0);
 
-    vec3 color = mix(uDeepBlue, uBlue, smoothstep(0.12, 0.58, strength));
-    color = mix(color, uPaleBlue, smoothstep(0.58, 1.0, strength));
+    vec3 color = mix(uDeepBlue, uBlue, smoothstep(0.08, 0.48, strength));
+    color = mix(color, uPaleBlue, smoothstep(0.32, 0.82, strength));
 
-    gl_FragColor = vec4(color * strength * 1.2, strength * 0.82);
+    gl_FragColor = vec4(color * strength * uSmokeOpacity, strength * uSmokeOpacity);
   }
 `;

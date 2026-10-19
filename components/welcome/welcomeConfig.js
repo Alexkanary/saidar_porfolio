@@ -10,8 +10,14 @@ export const welcomeConfig = {
     edgeRaggedness: 0.18,
     // Glow remains detailed to this multiple of the logo radius.
     maskSize: 1.8,
-    // Maximum trail strength away from the logo, including the text block.
+    // Maximum trail brightness across the screen outside the logo.
     maxGlowOutsideLogo: 0.45,
+    // The trail remains present but subdued over the emblem itself.
+    logoTrailBrightness: 0.22,
+    // Keep a trace of smoke beneath the copy, rather than obscuring it.
+    contentTrailBrightness: 0.025,
+    // Overall opacity for the softer silver-blue smoke pass.
+    smokeOpacity: 0.42,
     // Autonomous light brightness after the cursor has been idle.
     idleIntensity: 0.3,
     // Base gaussian splat radius in the low-resolution simulation buffer.
@@ -61,6 +67,7 @@ export const welcomeConfig = {
     deepBlue: "#1b3a6b",
     blue: "#2f6fb5",
     paleBlue: "#a8d4ff",
+    smokeSilverBlue: "#c1d2e8",
     silver: "#d5deef",
   },
 };

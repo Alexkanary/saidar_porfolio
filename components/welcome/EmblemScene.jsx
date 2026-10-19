@@ -345,9 +345,12 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
           uTexel: { value: new THREE.Vector2(1 / BUFFER_SIZE, 1 / BUFFER_SIZE) },
           uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
           uLogoUv: { value: new THREE.Vector2(0.5, 0.66) },
-          uTextBounds: { value: new THREE.Vector2(0.1, 0.5) },
+          uContentBounds: { value: new THREE.Vector4(0.3, 0.2, 0.7, 0.5) },
           uLogoRadius: { value: 90 },
           uMaxOutsideLogo: { value: effect.maxGlowOutsideLogo },
+          uLogoBrightness: { value: effect.logoTrailBrightness },
+          uContentBrightness: { value: effect.contentTrailBrightness },
+          uSmokeOpacity: { value: effect.smokeOpacity },
           uTime: { value: 0 },
           uFlare: { value: 0 },
           uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
@@ -355,7 +358,7 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
           uMaskSize: { value: effect.maskSize },
           uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
           uBlue: { value: new THREE.Color(colors.blue) },
-          uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
+          uPaleBlue: { value: new THREE.Color(colors.smokeSilverBlue) },
         },
         transparent: true,
         depthTest: false,
@@ -540,14 +543,20 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
 
         const logoRadius = RINGS[0].radius / WORLD_SIZE * anchorWidth;
         const textBounds = textBlockRef.current?.getBoundingClientRect();
-        const textBottom = textBounds ? 1 - textBounds.bottom / height : 0.1;
-        const textTop = textBounds ? 1 - textBounds.top / height : 0.5;
+        const contentBounds = textBounds
+          ? [
+            textBounds.left / width,
+            1 - textBounds.bottom / height,
+            textBounds.right / width,
+            1 - textBounds.top / height,
+          ]
+          : [0.3, 0.2, 0.7, 0.5];
         simulationMaterial.uniforms.uResolution.value.set(width, height);
         simulationMaterial.uniforms.uTrailRadius.value = effect.trailRadius * anchorWidth;
         displayMaterial.uniforms.uResolution.value.set(width, height);
         displayMaterial.uniforms.uLogoUv.value.copy(logoUv);
         displayMaterial.uniforms.uLogoRadius.value = logoRadius;
-        displayMaterial.uniforms.uTextBounds.value.set(textBottom, textTop);
+        displayMaterial.uniforms.uContentBounds.value.set(...contentBounds);
         grainPass.uniforms.uTime.value = performance.now() * 0.001;
         if (reducedMotion.matches) renderStatic();
       };
