@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { disableMusic, enableMusic } from "@/components/audio/audioManager";
-import EmblemScene from "./EmblemScene";
 import styles from "./welcome.module.scss";
 import { welcomeConfig } from "./welcomeConfig";
+
+const EmblemScene = dynamic(() => import("./EmblemScene"), { ssr: false });
 
 const staggeredEntrance = (delay) => ({
   initial: { opacity: 0, y: 12 },
