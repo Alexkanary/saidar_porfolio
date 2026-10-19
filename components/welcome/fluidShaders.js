@@ -7,6 +7,22 @@ export const fullscreenVertexShader = `
   }
 `;
 
+export const welcomeBackgroundShader = `
+  precision highp float;
+
+  varying vec2 vUv;
+  uniform vec3 uBackground;
+  uniform vec3 uCenter;
+  uniform vec3 uEdge;
+
+  void main() {
+    float radial = smoothstep(0.0, 0.95, length((vUv - vec2(0.5, 0.57)) * vec2(1.0, 0.82)));
+    vec3 color = mix(uCenter, uBackground, smoothstep(0.08, 0.72, radial));
+    color = mix(color, uEdge, smoothstep(0.72, 1.0, radial));
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
 export const fluidSimulationShader = `
   precision highp float;
 
@@ -148,66 +164,5 @@ export const fluidDisplayShader = `
     color = mix(color, uPaleBlue, smoothstep(0.58, 1.0, strength));
 
     gl_FragColor = vec4(color * strength * 1.2, strength * 0.82);
-  }
-`;
-
-export const emblemVertexShader = `
-  varying vec2 vScreenUv;
-  varying vec3 vNormal;
-  varying vec3 vViewPosition;
-
-  void main() {
-    vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-    vec4 projectedPosition = projectionMatrix * viewPosition;
-    vScreenUv = projectedPosition.xy / projectedPosition.w * 0.5 + 0.5;
-    vNormal = normalize(normalMatrix * normal);
-    vViewPosition = -viewPosition.xyz;
-    gl_Position = projectedPosition;
-  }
-`;
-
-export const emblemFragmentShader = `
-  precision highp float;
-
-  varying vec2 vScreenUv;
-  varying vec3 vNormal;
-  varying vec3 vViewPosition;
-  uniform sampler2D uTrail;
-  uniform vec2 uResolution;
-  uniform vec2 uLogoUv;
-  uniform float uLogoRadius;
-  uniform float uOpacity;
-  uniform float uFlare;
-  uniform float uStaticGlow;
-  uniform float uTime;
-  uniform float uEdgeRaggedness;
-  uniform float uMaskSize;
-  uniform vec3 uSilver;
-  uniform vec3 uDeepBlue;
-  uniform vec3 uBlue;
-  uniform vec3 uPaleBlue;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
-
-  void main() {
-    vec2 uv = clamp(vScreenUv, 0.0, 1.0);
-    float trail = texture2D(uTrail, uv).r;
-    float edgeNoise = hash(floor(uv * 92.0 + uTime * 0.1)) * uEdgeRaggedness;
-    float lit = smoothstep(0.12, 0.48, trail + edgeNoise);
-    float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 2.0);
-    vec2 logoDelta = (uv - uLogoUv) * uResolution;
-    float staticLight = exp(
-      -dot(logoDelta, logoDelta) / (uLogoRadius * uLogoRadius * 4.0)
-    ) * uStaticGlow;
-    float glow = clamp(lit + staticLight * 0.18 + uFlare, 0.0, 1.0);
-
-    vec3 color = mix(uSilver, uDeepBlue, smoothstep(0.03, 0.18, glow));
-    color = mix(color, uBlue, smoothstep(0.2, 0.62, glow));
-    color = mix(color, uPaleBlue, smoothstep(0.62, 0.96, glow));
-    float opacity = min(uOpacity * (1.0 - lit * 0.35) + fresnel * 0.06 + glow * 1.05, 1.0);
-
-    gl_FragColor = vec4(color * (0.72 + glow * 2.0), opacity);
   }
 `;

@@ -2,35 +2,236 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import styles from "./welcome.module.scss";
 import {
-  emblemFragmentShader,
-  emblemVertexShader,
   fluidDisplayShader,
   fluidSimulationShader,
   fullscreenVertexShader,
+  welcomeBackgroundShader,
 } from "./fluidShaders";
 import { welcomeConfig } from "./welcomeConfig";
 
-const { effect, colors } = welcomeConfig;
+const { effect, colors, emblem } = welcomeConfig;
 const BUFFER_SIZE = effect.bufferSize;
 const WORLD_SIZE = 4.4;
 const CURSOR_TILT_LIMIT = Math.PI / 30;
 const RING_SWING_LIMIT = Math.PI / 15;
+const RING_Y_SWING_LIMIT = Math.PI * 35 / 180;
 const RINGS = [
-  { radius: 1.0, depth: 0.08, opacity: 0.26, parallax: 0.7, period: effect.ringRotationPeriods[0] },
-  { radius: 0.8, depth: 0, opacity: 0.32, parallax: 1, period: effect.ringRotationPeriods[1] },
-  { radius: 0.58, depth: -0.08, opacity: 0.38, parallax: 1.3, period: effect.ringRotationPeriods[2] },
+  { radius: 1, depth: -0.09, opacity: 0.82, parallax: 0.7, period: effect.ringRotationPeriods[0], gap: 0 },
+  { radius: 0.8, depth: 0, opacity: 0.9, parallax: 1, period: effect.ringRotationPeriods[1], gap: Math.PI * 0.68 },
+  { radius: 0.58, depth: 0.09, opacity: 1, parallax: 1.3, period: effect.ringRotationPeriods[2], gap: Math.PI * 1.35 },
 ];
 
+const filmGrainShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uGrainAmount: { value: emblem.grainAmount },
+    uVignetteStrength: { value: 0.28 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    precision highp float;
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform float uGrainAmount;
+    uniform float uVignetteStrength;
+    varying vec2 vUv;
+
+    float hash(vec2 pixel) {
+      vec3 p3 = fract(vec3(pixel.xyx) * 0.1031);
+      p3 += dot(p3, p3.yxz + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    void main() {
+      vec4 source = texture2D(tDiffuse, vUv);
+      vec2 grainFrame = floor(uTime * 24.0) * vec2(17.0, 29.0);
+      float grain = (hash(floor(gl_FragCoord.xy) + grainFrame) - 0.5) * uGrainAmount;
+      float vignette = smoothstep(0.28, 0.82, distance(vUv, vec2(0.5)));
+      vec3 color = source.rgb + grain - vignette * uVignetteStrength * 0.18;
+      gl_FragColor = vec4(max(color, vec3(0.0)), source.a);
+    }
+  `,
+};
+
 const EmblemFallback = ({ style }) => (
-  <svg className={styles.fallbackEmblem} style={style} viewBox="-2.2 -2.2 4.4 4.4" aria-hidden="true">
+  <svg
+    className={styles.fallbackEmblem}
+    style={style}
+    viewBox="-2.2 -2.2 4.4 4.4"
+    aria-hidden="true"
+  >
     <circle cx="0" cy="0" r="1" />
     <circle cx="0" cy="0" r="0.8" />
     <circle cx="0" cy="0" r="0.58" />
-    <path d="M 0,-0.13 L 0.13,0 L 0,0.13 L -0.13,0 Z" />
+    <path d="M 0,-0.15 L 0.15,0 L 0,0.15 L -0.15,0 Z M -0.1,0 L 0.1,0 M 0,-0.1 L 0,0.1" />
   </svg>
 );
+
+const createBumpTexture = () => {
+  const size = 128;
+  const data = new Uint8Array(size * size * 4);
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const u = x / size;
+      const v = y / size;
+      const broad = Math.sin((u * 5 + v * 2) * Math.PI * 2)
+        * Math.cos((v * 4 - u * 2) * Math.PI * 2);
+      const medium = Math.sin((u * 17 + v * 11) * Math.PI * 2)
+        * Math.cos((v * 13 - u * 9) * Math.PI * 2);
+      const fine = Math.sin((u * 43 + v * 31) * Math.PI * 2)
+        * Math.cos((v * 37 - u * 29) * Math.PI * 2);
+      const value = Math.round(128 + broad * 24 + medium * 19 + fine * 13);
+      const index = (y * size + x) * 4;
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
+      data[index + 3] = 255;
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+};
+
+const createExtrudedGeometry = (shape, depth) => new THREE.ExtrudeGeometry(shape, {
+  depth,
+  bevelEnabled: true,
+  bevelSegments: emblem.bevelSegments,
+  steps: 1,
+  bevelSize: emblem.bevelSize,
+  bevelThickness: emblem.bevelThickness,
+  curveSegments: 96,
+});
+
+const createAnnularArc = (radius, width, start, end) => {
+  const shape = new THREE.Shape();
+  const innerRadius = radius - width;
+  const steps = Math.max(24, Math.ceil((end - start) / (Math.PI * 2) * 96));
+
+  for (let i = 0; i <= steps; i += 1) {
+    const angle = start + (end - start) * i / steps;
+    const point = new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    if (i === 0) shape.moveTo(point.x, point.y);
+    else shape.lineTo(point.x, point.y);
+  }
+
+  for (let i = steps; i >= 0; i -= 1) {
+    const angle = start + (end - start) * i / steps;
+    shape.lineTo(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius);
+  }
+  shape.closePath();
+  return shape;
+};
+
+const createDiamondBand = (outerRadius, width) => {
+  const corners = (radius) => [
+    new THREE.Vector2(0, radius),
+    new THREE.Vector2(radius, 0),
+    new THREE.Vector2(0, -radius),
+    new THREE.Vector2(-radius, 0),
+  ];
+  const shape = new THREE.Shape();
+  corners(outerRadius).forEach((point, index) => {
+    if (index === 0) shape.moveTo(point.x, point.y);
+    else shape.lineTo(point.x, point.y);
+  });
+  shape.closePath();
+
+  const hole = new THREE.Path();
+  corners(outerRadius - width).reverse().forEach((point, index) => {
+    if (index === 0) hole.moveTo(point.x, point.y);
+    else hole.lineTo(point.x, point.y);
+  });
+  hole.closePath();
+  shape.holes.push(hole);
+  return shape;
+};
+
+const createRectShape = (width, height) => {
+  const shape = new THREE.Shape();
+  shape.moveTo(-width / 2, -height / 2);
+  shape.lineTo(width / 2, -height / 2);
+  shape.lineTo(width / 2, height / 2);
+  shape.lineTo(-width / 2, height / 2);
+  shape.closePath();
+  return shape;
+};
+
+const createStoneMaterial = (texture, trailTexture) => {
+  const material = new THREE.MeshStandardMaterial({
+    color: emblem.bodyColor,
+    roughness: emblem.roughness,
+    metalness: emblem.metalness,
+    bumpMap: texture,
+    bumpScale: emblem.bumpScale,
+    emissive: colors.blue,
+    emissiveIntensity: 0.08,
+  });
+  const trailUniforms = {
+    uTrailTexture: { value: trailTexture },
+    uTrailEmissive: { value: 1.8 },
+  };
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uTrailTexture = trailUniforms.uTrailTexture;
+    shader.uniforms.uTrailEmissive = trailUniforms.uTrailEmissive;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vEmblemScreenUv;")
+      .replace(
+        "#include <project_vertex>",
+        "#include <project_vertex>\nvEmblemScreenUv = gl_Position.xy / gl_Position.w * 0.5 + 0.5;",
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec2 vEmblemScreenUv;
+        uniform sampler2D uTrailTexture;
+        uniform float uTrailEmissive;`,
+      )
+      .replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+        float trailLight = texture2D(uTrailTexture, clamp(vEmblemScreenUv, 0.0, 1.0)).r;
+        totalEmissiveRadiance += mix(vec3(0.08, 0.22, 0.48), vec3(0.45, 0.78, 1.0), smoothstep(0.2, 0.9, trailLight))
+          * trailLight * uTrailEmissive;`,
+      );
+  };
+  material.customProgramCacheKey = () => "carved-emblem-trail-emissive-v1";
+  material.userData.trailUniforms = trailUniforms;
+  return material;
+};
+
+const addDashedPath = (parent, points, material, z) => {
+  const geometry = new THREE.BufferGeometry().setFromPoints(
+    points.map((point) => new THREE.Vector3(point.x, point.y, z)),
+  );
+  const line = new THREE.Line(geometry, material);
+  line.computeLineDistances();
+  parent.add(line);
+  return geometry;
+};
 
 const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
   const hostRef = useRef(null);
@@ -42,15 +243,20 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
     const host = hostRef.current;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let renderer;
+    let composer;
+    let bloomPass;
+    let outputPass;
+    let grainPass;
     let simulationTargetA;
     let simulationTargetB;
     let simulationMaterial;
     let displayMaterial;
-    let geometries = [];
-    let materials = [];
+    let bumpTexture;
     let resizeObserver;
     let animationFrame = 0;
     let disposed = false;
+    const geometries = new Set();
+    const materials = new Set();
 
     try {
       renderer = new THREE.WebGLRenderer({
@@ -64,22 +270,22 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
       renderer.domElement.setAttribute("aria-hidden", "true");
       renderer.domElement.className = styles.emblemCanvas;
       host.appendChild(renderer.domElement);
-
       renderer.setSize(window.innerWidth, window.innerHeight, false);
 
       const scene = new THREE.Scene();
-      const glowColors = () => ({
-        uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
-        uBlue: { value: new THREE.Color(colors.blue) },
-        uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
-      });
-      const camera = new THREE.OrthographicCamera(-WORLD_SIZE / 2, WORLD_SIZE / 2, WORLD_SIZE / 2, -WORLD_SIZE / 2, 0.1, 10);
+      const camera = new THREE.OrthographicCamera(
+        -WORLD_SIZE / 2,
+        WORLD_SIZE / 2,
+        WORLD_SIZE / 2,
+        -WORLD_SIZE / 2,
+        0.1,
+        20,
+      );
       camera.position.z = 5;
 
       const fluidScene = new THREE.Scene();
       const fluidCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2);
       fluidCamera.position.z = 1;
-
       const targetOptions = {
         format: THREE.RGBAFormat,
         type: THREE.HalfFloatType,
@@ -93,7 +299,25 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
       simulationTargetB = new THREE.WebGLRenderTarget(BUFFER_SIZE, BUFFER_SIZE, targetOptions);
 
       const fullscreenGeometry = new THREE.PlaneGeometry(2, 2);
-      geometries.push(fullscreenGeometry);
+      geometries.add(fullscreenGeometry);
+      const backgroundMaterial = new THREE.ShaderMaterial({
+        vertexShader: fullscreenVertexShader,
+        fragmentShader: welcomeBackgroundShader,
+        uniforms: {
+          uBackground: { value: new THREE.Color(colors.background) },
+          uCenter: { value: new THREE.Color(colors.center) },
+          uEdge: { value: new THREE.Color(colors.edge) },
+        },
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      materials.add(backgroundMaterial);
+      const backgroundPlane = new THREE.Mesh(fullscreenGeometry, backgroundMaterial);
+      backgroundPlane.renderOrder = 0;
+      backgroundPlane.frustumCulled = false;
+      scene.add(backgroundPlane);
+
       simulationMaterial = new THREE.ShaderMaterial({
         vertexShader: fullscreenVertexShader,
         fragmentShader: fluidSimulationShader,
@@ -110,7 +334,7 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         depthTest: false,
         depthWrite: false,
       });
-      materials.push(simulationMaterial);
+      materials.add(simulationMaterial);
       fluidScene.add(new THREE.Mesh(fullscreenGeometry, simulationMaterial));
 
       displayMaterial = new THREE.ShaderMaterial({
@@ -129,7 +353,9 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
           uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
           uEdgeRaggedness: { value: effect.edgeRaggedness },
           uMaskSize: { value: effect.maskSize },
-          ...glowColors(),
+          uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
+          uBlue: { value: new THREE.Color(colors.blue) },
+          uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
         },
         transparent: true,
         depthTest: false,
@@ -137,80 +363,115 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         blending: THREE.AdditiveBlending,
         toneMapped: false,
       });
-      materials.push(displayMaterial);
+      materials.add(displayMaterial);
       const glowPlane = new THREE.Mesh(fullscreenGeometry, displayMaterial);
-      glowPlane.position.z = -0.9;
+      glowPlane.renderOrder = 1;
+      glowPlane.frustumCulled = false;
       scene.add(glowPlane);
 
+      const ambientLight = new THREE.AmbientLight(0x0d111c, 1.4);
+      scene.add(ambientLight);
+      const keyLight = new THREE.PointLight(emblem.keyLightColor, 0, 6, 2);
+      keyLight.position.set(0, 0.8, 1.1);
+      scene.add(keyLight);
+      const rimLight = new THREE.PointLight(colors.blue, 1.35, 5, 2);
+      rimLight.position.set(0, -0.4, -0.75);
+      scene.add(rimLight);
+
+      bumpTexture = createBumpTexture();
+      const stoneMaterial = createStoneMaterial(bumpTexture, simulationTargetA.texture);
+      materials.add(stoneMaterial);
+      const dashedMaterial = new THREE.LineDashedMaterial({
+        color: emblem.dashedLineColor,
+        transparent: true,
+        opacity: emblem.dashedLineOpacity,
+        dashSize: 0.06,
+        gapSize: 0.04,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      materials.add(dashedMaterial);
+
       const root = new THREE.Group();
+      root.renderOrder = 2;
       scene.add(root);
-      const ringGroups = RINGS.map(({ radius, depth, opacity, parallax, period }) => {
+      const ringGroups = RINGS.map(({ radius, depth, parallax, period, gap }) => {
         const group = new THREE.Group();
         group.position.z = depth;
-        const geometry = new THREE.TorusGeometry(radius, 0.006, 6, 240);
-        const material = new THREE.ShaderMaterial({
-          vertexShader: emblemVertexShader,
-          fragmentShader: emblemFragmentShader,
-          uniforms: {
-            uTrail: { value: simulationTargetA.texture },
-            uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-            uLogoUv: { value: new THREE.Vector2(0.5, 0.66) },
-            uLogoRadius: { value: 90 },
-            uOpacity: { value: opacity },
-            uFlare: { value: 0 },
-            uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
-            uTime: { value: 0 },
-            uEdgeRaggedness: { value: effect.edgeRaggedness },
-            uMaskSize: { value: effect.maskSize },
-            uSilver: { value: new THREE.Color(colors.silver) },
-            uBlue: { value: new THREE.Color(colors.blue) },
-            uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
-            uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
-          },
-          transparent: true,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-          toneMapped: false,
-        });
-        geometries.push(geometry);
-        materials.push(material);
-        group.add(new THREE.Mesh(geometry, material));
+        const bandWidth = radius * emblem.bandWidth;
+        const extrusionDepth = bandWidth * emblem.extrudeDepth;
+        const gapHalf = 0.055;
+        const start = gap + gapHalf;
+        const end = gap + Math.PI * 2 - gapHalf;
+        const shape = createAnnularArc(radius, bandWidth, start, end);
+        const geometry = createExtrudedGeometry(shape, extrusionDepth);
+        geometries.add(geometry);
+        group.add(new THREE.Mesh(geometry, stoneMaterial));
+
+        const points = [];
+        const lineSteps = 360;
+        for (let i = 0; i <= lineSteps; i += 1) {
+          const angle = start + (end - start) * i / lineSteps;
+          points.push(new THREE.Vector2(
+            Math.cos(angle) * (radius - bandWidth / 2),
+            Math.sin(angle) * (radius - bandWidth / 2),
+          ));
+        }
+        geometries.add(addDashedPath(
+          group,
+          points,
+          dashedMaterial,
+          extrusionDepth + emblem.bevelThickness + 0.004,
+        ));
         root.add(group);
         return { group, parallax, period };
       });
 
-      const diamondGeometry = new THREE.OctahedronGeometry(0.14, 0);
-      const diamondMaterial = new THREE.ShaderMaterial({
-        vertexShader: emblemVertexShader,
-        fragmentShader: emblemFragmentShader,
-        uniforms: {
-          uTrail: { value: simulationTargetA.texture },
-          uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-          uLogoUv: { value: new THREE.Vector2(0.5, 0.66) },
-          uLogoRadius: { value: 90 },
-          uOpacity: { value: 0.72 },
-          uFlare: { value: 0 },
-          uStaticGlow: { value: reducedMotion.matches ? 1 : 0 },
-          uTime: { value: 0 },
-          uEdgeRaggedness: { value: effect.edgeRaggedness },
-          uMaskSize: { value: effect.maskSize },
-          uSilver: { value: new THREE.Color(colors.silver) },
-          uBlue: { value: new THREE.Color(colors.blue) },
-          uPaleBlue: { value: new THREE.Color(colors.paleBlue) },
-          uDeepBlue: { value: new THREE.Color(colors.deepBlue) },
-        },
-        wireframe: true,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        toneMapped: false,
+      const diamondSize = 0.19;
+      const diamondDepth = emblem.bandWidth * emblem.extrudeDepth;
+      const diamondGeometry = createExtrudedGeometry(
+        createDiamondBand(diamondSize, 0.035),
+        diamondDepth,
+      );
+      geometries.add(diamondGeometry);
+      const diamondGroup = new THREE.Group();
+      diamondGroup.position.z = 0.18;
+      diamondGroup.add(new THREE.Mesh(diamondGeometry, stoneMaterial));
+      const crossWidth = 0.022;
+      const crossLength = diamondSize * 1.12;
+      const crossGeometryH = createExtrudedGeometry(
+        createRectShape(crossLength, crossWidth),
+        diamondDepth,
+      );
+      const crossGeometryV = createExtrudedGeometry(
+        createRectShape(crossWidth, crossLength),
+        diamondDepth,
+      );
+      geometries.add(crossGeometryH);
+      geometries.add(crossGeometryV);
+      const crossHorizontal = new THREE.Mesh(crossGeometryH, stoneMaterial);
+      const crossVertical = new THREE.Mesh(crossGeometryV, stoneMaterial);
+      crossHorizontal.position.z = diamondDepth + 0.045;
+      crossVertical.position.z = diamondDepth + 0.045;
+      diamondGroup.add(crossHorizontal, crossVertical);
+      const crossLinePoints = [
+        [new THREE.Vector2(-crossLength / 2, 0), new THREE.Vector2(crossLength / 2, 0)],
+        [new THREE.Vector2(0, -crossLength / 2), new THREE.Vector2(0, crossLength / 2)],
+      ];
+      crossLinePoints.forEach((points) => {
+        geometries.add(addDashedPath(
+          diamondGroup,
+          points,
+          dashedMaterial,
+          diamondDepth * 2 + 0.055,
+        ));
       });
-      geometries.push(diamondGeometry);
-      materials.push(diamondMaterial);
-      const diamond = new THREE.Mesh(diamondGeometry, diamondMaterial);
-      root.add(diamond);
-      const emblemMaterials = materials.slice(2);
+      root.add(diamondGroup);
+
+      const emblemMeshes = [];
+      root.traverse((child) => {
+        if (child.isMesh) emblemMeshes.push(child);
+      });
 
       const pointer = new THREE.Vector2(0.5, 0.5);
       const previousPointer = new THREE.Vector2(0.5, 0.5);
@@ -219,10 +480,6 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
       const previousLightPoint = new THREE.Vector2(0.5, 0.5);
       const lightVelocity = new THREE.Vector2();
       const lightDelta = new THREE.Vector2();
-      const lightBounds = {
-        min: new THREE.Vector2(0.01, 0.01),
-        max: new THREE.Vector2(0.99, 0.99),
-      };
       const cursorTilt = new THREE.Vector2();
       const targetTilt = new THREE.Vector2();
       const logoPosition = new THREE.Vector2();
@@ -237,6 +494,21 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
       let writeTarget = simulationTargetB;
       let lastFrameTime = sceneStartedAt;
 
+      const renderPass = new RenderPass(scene, camera);
+      bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        emblem.bloomStrength,
+        emblem.bloomRadius,
+        emblem.bloomThreshold,
+      );
+      grainPass = new ShaderPass(filmGrainShader);
+      composer = new EffectComposer(renderer);
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+      outputPass = new OutputPass();
+      composer.addPass(outputPass);
+      composer.addPass(grainPass);
+
       const updateLayout = () => {
         const width = window.innerWidth;
         const height = window.innerHeight;
@@ -246,8 +518,11 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         if (!anchorBounds?.width || !anchorBounds.height || !anchorWidth || !anchorHeight) return;
 
         const unitsPerPixel = WORLD_SIZE / anchorWidth;
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        renderer.setPixelRatio(pixelRatio);
         renderer.setSize(width, height, false);
+        composer.setPixelRatio(pixelRatio);
+        composer.setSize(width, height);
         camera.left = -width * unitsPerPixel / 2;
         camera.right = width * unitsPerPixel / 2;
         camera.top = height * unitsPerPixel / 2;
@@ -261,8 +536,8 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
           0,
         );
         logoPosition.set(root.position.x, root.position.y);
-
         logoUv.set(centerX / width, 1 - centerY / height);
+
         const logoRadius = RINGS[0].radius / WORLD_SIZE * anchorWidth;
         const textBounds = textBlockRef.current?.getBoundingClientRect();
         const textBottom = textBounds ? 1 - textBounds.bottom / height : 0.1;
@@ -273,27 +548,24 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         displayMaterial.uniforms.uLogoUv.value.copy(logoUv);
         displayMaterial.uniforms.uLogoRadius.value = logoRadius;
         displayMaterial.uniforms.uTextBounds.value.set(textBottom, textTop);
-        emblemMaterials.forEach((material) => {
-          material.uniforms.uResolution.value.set(width, height);
-          material.uniforms.uLogoUv.value.copy(logoUv);
-          material.uniforms.uLogoRadius.value = logoRadius;
-        });
-
+        grainPass.uniforms.uTime.value = performance.now() * 0.001;
+        if (reducedMotion.matches) renderStatic();
       };
 
       const handlePointerMove = (event) => {
         if (!canHover || event.pointerType === "touch") return;
         const x = event.clientX / window.innerWidth;
         const y = 1 - event.clientY / window.innerHeight;
-
         pointer.set(x, y);
         lastInputTime = performance.now();
         hasPointerInput = true;
-        if (anchorBounds?.width && anchorBounds.height) {
+
+        const anchor = anchorRef.current;
+        if (anchor && anchorBounds?.width && anchorBounds.height) {
           const centerX = anchorBounds.left + anchorBounds.width / 2;
           const centerY = anchorBounds.top + anchorBounds.height / 2;
-          const anchorWidth = anchorRef.current.offsetWidth;
-          const anchorHeight = anchorRef.current.offsetHeight;
+          const anchorWidth = anchor.offsetWidth;
+          const anchorHeight = anchor.offsetHeight;
           targetTilt.set(
             THREE.MathUtils.clamp((centerY - event.clientY) / (anchorHeight / 2), -1, 1) * CURSOR_TILT_LIMIT,
             THREE.MathUtils.clamp((event.clientX - centerX) / (anchorWidth / 2), -1, 1) * CURSOR_TILT_LIMIT,
@@ -301,22 +573,19 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         }
       };
 
-      const handleResize = () => {
-        if (!host.isConnected) return;
-        updateLayout();
-        if (reducedMotion.matches) renderStatic();
-      };
-
       const renderStatic = () => {
-        updateLayout();
         renderer.setRenderTarget(null);
-        renderer.clear();
-        renderer.render(scene, camera);
+        composer.render();
       };
 
       const renderFrame = (now) => {
         animationFrame = 0;
         if (disposed || document.hidden || reducedMotion.matches) return;
+        const anchor = anchorRef.current;
+        if (!anchor || !anchorBounds?.width) {
+          animationFrame = window.requestAnimationFrame(renderFrame);
+          return;
+        }
 
         const elapsed = Math.min((now - lastFrameTime) / 1000, 0.05);
         lastFrameTime = now;
@@ -328,8 +597,8 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         );
         if (idle) {
           const autonomousTime = time * 0.34;
-          const idleRangeX = anchorRef.current.offsetWidth / window.innerWidth * 0.2;
-          const idleRangeY = anchorRef.current.offsetHeight / window.innerHeight * 0.18;
+          const idleRangeX = anchor.offsetWidth / window.innerWidth * 0.2;
+          const idleRangeY = anchor.offsetHeight / window.innerHeight * 0.18;
           pointer.set(
             logoUv.x + Math.sin(autonomousTime) * idleRangeX,
             logoUv.y + Math.sin(autonomousTime * 1.37 + 0.7) * idleRangeY,
@@ -341,33 +610,30 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         }
 
         const frameScale = Math.min(elapsed * 60, 2);
-        const spring = effect.cursorLag * frameScale;
-        const damping = Math.pow(0.84, frameScale);
         cursorVelocity.copy(pointer).sub(previousPointer).divideScalar(frameScale);
         previousPointer.copy(pointer);
         previousLightPoint.copy(lightPoint);
         lightDelta.subVectors(pointer, lightPoint);
-        lightVelocity.addScaledVector(lightDelta, spring);
-        lightVelocity.multiplyScalar(damping);
+        lightVelocity.addScaledVector(lightDelta, effect.cursorLag * frameScale);
+        lightVelocity.multiplyScalar(Math.pow(0.84, frameScale));
         lightPoint.addScaledVector(lightVelocity, frameScale);
-        lightPoint.clamp(lightBounds.min, lightBounds.max);
+        lightPoint.clamp(new THREE.Vector2(0.005, 0.005), new THREE.Vector2(0.995, 0.995));
         lightVelocity.copy(lightPoint).sub(previousLightPoint).divideScalar(frameScale);
         cursorTilt.lerp(targetTilt, 0.06);
+
         root.position.x = logoPosition.x;
         root.position.y = logoPosition.y + Math.sin(time * 0.6) * 0.025;
-        root.scale.setScalar(anchorBounds.width / anchorRef.current.offsetWidth);
-        root.rotation.x = cursorTilt.x;
-        root.rotation.y = cursorTilt.y;
-
+        root.scale.setScalar(anchorBounds.width / anchor.offsetWidth);
+        root.rotation.set(cursorTilt.x, cursorTilt.y, 0);
         ringGroups.forEach(({ group, parallax, period }, index) => {
           group.rotation.x = Math.sin(time * 0.32 + index * 0.7) * RING_SWING_LIMIT
             + cursorTilt.x * parallax * 0.25;
-          group.rotation.y = time * (Math.PI * 2 / period)
+          group.rotation.y = Math.sin(time * Math.PI * 2 / period + index) * RING_Y_SWING_LIMIT
             + cursorTilt.y * parallax * 0.25;
           group.rotation.z = Math.sin(time * 0.22 + index) * 0.012;
         });
-        const diamondAngle = time * (Math.PI * 2 / effect.diamondRotationPeriod);
-        diamond.rotation.set(diamondAngle * 0.7, diamondAngle, diamondAngle * 0.35);
+        const diamondAngle = time * Math.PI * 2 / effect.diamondRotationPeriod;
+        diamondGroup.rotation.set(diamondAngle * 0.7, diamondAngle, diamondAngle * 0.35);
 
         simulationMaterial.uniforms.uPrevious.value = readTarget.texture;
         simulationMaterial.uniforms.uLight.value.copy(lightPoint);
@@ -378,27 +644,35 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         const speed = Math.min(cursorVelocity.length() * 60 + lightVelocity.length() * 24, 1);
         const stopDuration = hasPointerInput ? now - lastInputTime : Infinity;
         const motionFade = Math.exp(-Math.max(stopDuration - 100, 0) / 720);
-        simulationMaterial.uniforms.uSplatStrength.value = idle
-          ? effect.idleIntensity
-          : speed * motionFade;
+        const splatStrength = idle ? effect.idleIntensity : speed * motionFade;
+        simulationMaterial.uniforms.uSplatStrength.value = splatStrength;
+        keyLight.intensity = emblem.keyLightIntensity * (
+          idle ? effect.idleIntensity : Math.max(speed * motionFade, 0.015)
+        );
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const unitsPerPixel = WORLD_SIZE / anchor.offsetWidth;
+        keyLight.position.set(
+          (lightPoint.x - 0.5) * width * unitsPerPixel,
+          (lightPoint.y - 0.5) * height * unitsPerPixel,
+          1.1,
+        );
+
         renderer.setRenderTarget(writeTarget);
         renderer.render(fluidScene, fluidCamera);
         renderer.setRenderTarget(null);
-
-        // Ping-pong buffers so each fluid pass samples the previous frame.
         [readTarget, writeTarget] = [writeTarget, readTarget];
         displayMaterial.uniforms.uTrail.value = readTarget.texture;
         displayMaterial.uniforms.uTime.value = time;
         const flare = flareStartedAt ? Math.max(0, 1 - (now - flareStartedAt) / 400) : 0;
         displayMaterial.uniforms.uFlare.value = flare;
-        emblemMaterials.forEach((material) => {
-          material.uniforms.uTrail.value = readTarget.texture;
-          material.uniforms.uFlare.value = flare;
-          material.uniforms.uTime.value = time;
+        emblemMeshes.forEach((mesh) => {
+          const trailUniform = mesh.material.userData.trailUniforms.uTrailTexture;
+          trailUniform.value = readTarget.texture;
         });
+        grainPass.uniforms.uTime.value = time;
 
-        renderer.clear();
-        renderer.render(scene, camera);
+        composer.render(elapsed);
         animationFrame = window.requestAnimationFrame(renderFrame);
       };
 
@@ -420,13 +694,14 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         }
       };
 
+      const handleResize = () => {
+        if (host.isConnected) updateLayout();
+      };
+
       const handleMotionPreferenceChange = () => {
         if (animationFrame) window.cancelAnimationFrame(animationFrame);
         animationFrame = 0;
         displayMaterial.uniforms.uStaticGlow.value = reducedMotion.matches ? 1 : 0;
-        emblemMaterials.forEach((material) => {
-          material.uniforms.uStaticGlow.value = reducedMotion.matches ? 1 : 0;
-        });
         if (reducedMotion.matches) renderStatic();
         else startLoop();
       };
@@ -436,41 +711,42 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
         if (!reducedMotion.matches) startLoop();
         else {
           displayMaterial.uniforms.uFlare.value = 1;
-          emblemMaterials.forEach((material) => {
-            material.uniforms.uFlare.value = 1;
-          });
           renderStatic();
         }
       };
 
+      updateLayout();
       window.addEventListener("pointermove", handlePointerMove, { passive: true });
+      window.addEventListener("resize", handleResize);
       document.addEventListener("visibilitychange", handleVisibilityChange);
       reducedMotion.addEventListener("change", handleMotionPreferenceChange);
-      window.addEventListener("resize", handleResize);
       if ("ResizeObserver" in window) {
         resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(anchorRef.current);
         resizeObserver.observe(textBlockRef.current);
       }
 
-      updateLayout();
       if (reducedMotion.matches) renderStatic();
       else startLoop();
-
       flareHandlerRef.current = handleFlare;
 
       return () => {
         disposed = true;
         if (animationFrame) window.cancelAnimationFrame(animationFrame);
         window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("resize", handleResize);
         document.removeEventListener("visibilitychange", handleVisibilityChange);
         reducedMotion.removeEventListener("change", handleMotionPreferenceChange);
-        window.removeEventListener("resize", handleResize);
         resizeObserver?.disconnect();
+        composer.dispose();
+        bloomPass.dispose();
+        outputPass.dispose();
+        grainPass.material.dispose();
         geometries.forEach((geometry) => geometry.dispose());
         materials.forEach((material) => material.dispose());
         simulationTargetA.dispose();
         simulationTargetB.dispose();
+        bumpTexture.dispose();
         renderer.dispose();
         renderer.domElement.remove();
         flareHandlerRef.current = null;
@@ -497,18 +773,17 @@ const EmblemScene = ({ flaring, anchorRef, textBlockRef }) => {
 
   useEffect(() => {
     if (!webglFailed) return undefined;
-
     const updateFallbackBounds = () => {
       const bounds = anchorRef.current?.getBoundingClientRect();
-      if (!bounds) return;
-      setFallbackBounds({
-        left: bounds.left,
-        top: bounds.top,
-        width: bounds.width,
-        height: bounds.height,
-      });
+      if (bounds) {
+        setFallbackBounds({
+          left: bounds.left,
+          top: bounds.top,
+          width: bounds.width,
+          height: bounds.height,
+        });
+      }
     };
-
     window.addEventListener("resize", updateFallbackBounds);
     return () => window.removeEventListener("resize", updateFallbackBounds);
   }, [webglFailed, anchorRef]);
